@@ -195,12 +195,13 @@ body.full .fs-status{display:flex;gap:14px;position:fixed;top:12px;left:14px;z-i
   </div>
   <div>
     <div class="panel">
-      <h2>Teach a name</h2>
-      <div style="font-size:14px;color:var(--muted)">If the tracker keeps hearing a name wrong, save what it hears.</div>
+      <h2>Teach a word</h2>
+      <div style="font-size:14px;color:var(--muted)">If it keeps mishearing a name or a stat, save what it hears and what you meant. Missed calls fill in the first box for you.</div>
       <div class="row">
-        <input id="aliasHeard" type="text" placeholder="Ricky" aria-label="Heard as" style="flex:1">
-        <select id="aliasPlayer" aria-label="Player"></select>
-        <button id="aliasSave">Save name</button>
+        <input id="aliasHeard" type="text" placeholder="Heard as: railroad" aria-label="Heard as" style="flex:1;min-width:140px">
+        <input id="aliasPlayer" type="text" list="aliasList" placeholder="Means: royal road" aria-label="Means" style="flex:1;min-width:140px">
+        <datalist id="aliasList"></datalist>
+        <button id="aliasSave">Save</button>
       </div>
       <div id="aliasMsg" class="sync" style="margin-top:6px"></div>
     </div>
@@ -238,6 +239,17 @@ function norm(raw){
     .replace(/[^a-z0-9, ]/g,' ') + ' ';
   s = s.replace(/\s*,\s*/g,' , ').replace(/\s+/g,' ');
   const rep = [
+    [/ (railroad|rail road|real road|royal rd|roll road|royal rode|royal rowed|royale road|roy road|loyal road) /g,' royal road '],
+    [/ (pocket|puck it|pock|pucker|park) (recovery|recover|recovered|rec) /g,' puck $2 '],
+    [/ (lose|loot|lewis|lucy) puck /g,' loose puck '],
+    [/ (entree|n tree|and tree|entering) /g,' entry '],
+    [/ (shot|shots|attempt|attempts) (4|four|fore) /g,' $1 for '],
+    [/ (gold|gall|goel) /g,' goal '],
+    [/ (safe|sale|shave) /g,' save '],
+    [/ (face of|face off|base off|phase off|faceoffs) /g,' faceoff '],
+    [/ (whistles|whistled|whistling) /g,' whistle '],
+    [/ (a cyst|assisted|assistant|cyst) /g,' assist '],
+    [/ (quality chants|quality chancellor|quantity) /g,' quality '],
     [/ (o|oh|offensive|ozone) zone /g,' ozone '], [/ ozone /g,' ozone '],
     [/ (d|dee|defensive|defence|defense) zone /g,' dzone '], [/ (n|en|neutral) zone /g,' nzone '],
     [/ shot on goal /g,' shot onnet '], [/ shots on goal /g,' shot onnet '], [/ on goal /g,' onnet '], [/ on net /g,' onnet '],
@@ -342,8 +354,16 @@ function presetHits(s, lines, roster){
   return {hits, rest};
 }
 
+function applyPhrases(s, phrases){
+  (phrases||[]).forEach(ph => {
+    const h = norm(ph.heard), m = norm(ph.player);
+    if (h && m) s = (' ' + s + ' ').split(' ' + h + ' ').join(' ' + m + ' ').trim();
+  });
+  return s;
+}
+
 function parseCall(raw, ctx){
-  const s = norm(raw);
+  const s = applyPhrases(norm(raw), ctx.phrases);
   if (!s || s===',') return {error:'Nothing heard.'};
   if (/^(undo|undo that|scratch that|delete that|cancel that|cancel|take that back)$/.test(s)) return {kind:'undo'};
   let m = s.match(/^(?:go )?back (\d+|one|two|to|too|three|four|five)(?: seconds?| secs?)?$/);
@@ -548,7 +568,7 @@ function fmt(sec){
   const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
   return (h ? h + ':' + String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0');
 }
-if (typeof module !== 'undefined') module.exports = {norm, buildIndex, findNames, parseCall, buildIncs, describe, summaryText, replay, fmt, S};
+if (typeof module !== 'undefined') module.exports = {applyPhrases, norm, buildIndex, findNames, parseCall, buildIncs, describe, summaryText, replay, fmt, S};
 </script>
 
 <script>
@@ -568,7 +588,8 @@ async function api(action, payload){
   return j.data;
 }
 
-function ctx(){ return {index: st.index, lines: st.lines, roster: st.roster}; }
+function phraseAliases(){ return st.aliases.filter(a => !st.roster.some(p => p.name === a.player)); }
+function ctx(){ return {index: st.index, lines: st.lines, roster: st.roster, phrases: phraseAliases()}; }
 function now(){ return video.currentTime || 0; }
 function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function active(){ return st.entries.filter(e => !e.removed); }
@@ -708,7 +729,7 @@ function showHudMsg(msg, warn){
 function flashWarn(msg, heard){
   const hud = $('hud'); hud.className = 'hud warn'; hud.innerHTML = '';
   const m = document.createElement('div'); m.className = 'msg'; m.textContent = msg; hud.appendChild(m);
-  if (heard) { const h = document.createElement('div'); h.className = 'team'; h.textContent = 'Heard: "' + heard + '". Nothing counted.'; hud.appendChild(h); }
+  if (heard) { const h = document.createElement('div'); h.className = 'team'; h.textContent = 'Heard: "' + heard + '". Nothing counted.'; hud.appendChild(h); $('aliasHeard').value = heard; }
 }
 
 function renderLog(){
@@ -856,8 +877,8 @@ async function loadGame(){
     st.index = buildIndex(st.roster, st.aliases);
     st.entries = d.entries.map(e => Object.assign(e, {sync:'saved'}));
     st.seq = st.entries.reduce((m,e) => Math.max(m, e.seq||0), 0) + 1;
-    const ap = $('aliasPlayer'); ap.innerHTML = '';
-    st.roster.forEach(p => { const o = document.createElement('option'); o.value = o.textContent = p.name; ap.appendChild(o); });
+    const dl = $('aliasList'); dl.innerHTML = '';
+    st.roster.map(p => p.name).concat(['royal road','puck recovery','o zone','d zone','pass','zone entry','zone exit','quality','shot','wide','faceoff win','faceoff loss','goal','assist','save','shot for','shot against','chance against','whistle','change']).forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
     const missingPos = st.roster.filter(p => p.pos !== 'D' && p.pos !== 'F').length;
     showHudMsg(d.title + ' loaded: ' + st.roster.length + ' players, goalie ' + (st.goalie || 'not set') + ', ' + st.lines.length + ' line presets, ' + st.entries.length + ' logged entries.' + (missingPos ? ' ' + missingPos + ' players have no F or D in row 1, so line changes will replace the whole unit.' : ''), !st.roster.length || missingPos > 0);
     if (!st.roster.length) flashWarn('No players on ' + g + '. Add names to row 2 of the tab, then load again.');
@@ -916,11 +937,11 @@ $('writeShifts').onclick = async () => {
 };
 $('aliasSave').onclick = async () => {
   const heard = $('aliasHeard').value.trim(), player = $('aliasPlayer').value;
-  if (!heard || !player) { $('aliasMsg').textContent = 'Type what it hears and pick the player.'; return; }
+  if (!heard || !player) { $('aliasMsg').textContent = 'Fill in what it hears and what you meant.'; return; }
   try {
     await api('addAlias', {heard, player});
     st.aliases.push({heard, player}); st.index = buildIndex(st.roster, st.aliases);
-    $('aliasMsg').textContent = '"' + heard + '" now counts as ' + player + '.'; $('aliasHeard').value = '';
+    $('aliasMsg').textContent = '"' + heard + '" now means ' + player + '.'; $('aliasHeard').value = ''; $('aliasPlayer').value = '';
   } catch (err) { $('aliasMsg').textContent = err.message; }
 };
 
