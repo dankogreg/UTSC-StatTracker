@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UTSC voice tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#0F1A23; --board:#172633; --board-2:#1D2F3E; --line:#2B4051; --ice:#E8F1F5; --muted:#93A9B7;
+  --blue:#6BB4EA; --go:#4CC48B; --go-bg:#173A2C; --warn:#F2BA52; --warn-bg:#3D3119; --red:#E5534B;
+  --body:'Barlow',system-ui,sans-serif; --plate:'Barlow Condensed','Arial Narrow',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--night);color:var(--ice);font-family:var(--body);font-size:15px;line-height:1.45}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--board-2);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--blue)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+select,input[type=text],input[type=number],input[type=password]{background:var(--night);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.wrap{padding:10px 14px 40px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:10px}
+header h1{font-family:var(--plate);font-weight:700;font-size:24px;margin:0 12px 0 0;letter-spacing:.02em}
+.spacer{flex:1}
+.status{display:flex;gap:16px;color:var(--muted);font-size:14px}
+.status b{color:var(--ice);font-weight:500}
+.clock-run{color:var(--go)!important}.clock-stop{color:var(--warn)!important}
+.mic{display:flex;align-items:center;gap:8px}
+.mic.live{border-color:var(--red);color:var(--ice)}
+.mic .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.mic.live .dot{background:var(--red);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.mic.live .dot{animation:none}}
+main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px}
+@media (max-width:1100px){main{grid-template-columns:1fr}}
+.video-box{background:#000;border-radius:8px;overflow:hidden;height:calc(100vh - 205px);min-height:360px;display:flex;align-items:center;justify-content:center;position:relative}
+.video-box video{width:100%;height:100%;display:block;object-fit:contain}
+.video-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
+.transport{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.transport input[type=range]{flex:1;min-width:200px;accent-color:var(--blue)}
+.vt{font-variant-numeric:tabular-nums;color:var(--muted);min-width:130px;text-align:right}
+h2{font-family:var(--plate);font-weight:500;font-size:18px;margin:0 0 8px;color:var(--muted);letter-spacing:.02em}
+.ice-row{display:flex;align-items:center;gap:10px;min-height:52px}
+.ice{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--board);border:1px solid var(--line);border-radius:6px;padding:4px 10px;min-width:100px}
+.chip .n{font-family:var(--plate);font-size:19px;font-weight:700;line-height:1.1}
+.chip .m{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.chip.d{border-left:4px solid var(--blue)}
+.ice-note{color:var(--muted);font-size:14px}
+.meter{position:relative;height:12px;background:var(--night);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:10px}
+.lvl{height:100%;width:0;background:var(--muted);transition:width .06s linear}
+.lvl.talk{background:var(--go)}
+.tick{position:absolute;top:-1px;bottom:-1px;width:3px;background:var(--blue)}
+.meter-note{font-size:13px;color:var(--muted);margin-top:4px;min-height:18px}
+.hud .who{font-size:30px}
+.panel{background:var(--board);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px}
+.hearing{min-height:28px;font-size:17px;font-style:italic;color:var(--ice)}
+.hearing.idle{color:var(--muted);font-style:normal;font-size:15px}
+.hud{border-radius:8px;padding:14px 16px;margin-bottom:12px;min-height:120px;background:var(--board);border:2px solid var(--line);transition:background .25s,border-color .25s}
+.hud.ok{background:var(--go-bg);border-color:var(--go)}
+.hud.warn{background:var(--warn-bg);border-color:var(--warn)}
+.hud .who{font-family:var(--plate);font-weight:700;font-size:34px;text-transform:uppercase;line-height:1.05;letter-spacing:.03em}
+.hud .who small{font-size:22px;color:var(--muted);margin-left:8px}
+.hud .adds{font-size:17px;margin:2px 0 8px}
+.hud .team{font-size:14px;color:var(--muted)}
+.hud .msg{font-size:16px}
+.hud.ok .who,.hud.ok .adds{color:#DFF7EA}
+.hud.warn .msg{color:#FBE7BF}
+.typebox{display:flex;gap:8px}
+.typebox input{flex:1}
+.log{max-height:430px;overflow-y:auto;margin:0;padding:0;list-style:none}
+.log li{display:grid;grid-template-columns:62px 1fr auto;gap:8px;align-items:start;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.log .tm{color:var(--blue);cursor:pointer;font-variant-numeric:tabular-nums;background:none;border:0;padding:0;text-align:left}
+.log .heard{color:var(--muted);font-size:13px}
+.log .acts{display:flex;gap:4px}
+.log .acts button{padding:2px 7px;font-size:12px}
+.log .err{color:var(--warn)}
+.log .saving{color:var(--muted)}
+.bottom{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;margin-top:16px}
+@media (max-width:1100px){.bottom{grid-template-columns:1fr}}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px;color:var(--muted)}
+.keys kbd{font-family:var(--body);background:var(--night);border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--ice);justify-self:start}
+.settings{background:var(--board);border:1px solid var(--blue);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.settings label{display:block;margin:8px 0 4px;color:var(--muted);font-size:14px}
+.settings input{width:100%}
+.hide{display:none!important}
+.toast{color:var(--warn);font-size:14px;margin-left:8px}
+.sync{font-size:13px;color:var(--muted)}
+.fs-status{display:none}
+body.full header,body.full .bottom,body.full #typePanel,body.full #logPanel,body.full #settings{display:none!important}
+body.full .wrap{padding:0}
+body.full main{display:block}
+body.full .video-box{position:fixed;inset:0;height:100vh;min-height:0;border-radius:0;z-index:1}
+body.full .transport{position:fixed;left:0;right:0;bottom:0;z-index:3;margin:0;padding:8px 14px;background:rgba(15,26,35,.78)}
+body.full .ice-row{position:fixed;left:14px;bottom:58px;z-index:3;min-height:0}
+body.full .chip{background:rgba(23,38,51,.82)}
+body.full #side{position:fixed;top:12px;right:12px;width:320px;z-index:3}
+body.full #side .panel{background:rgba(23,38,51,.82)}
+body.full .hud{background:rgba(23,38,51,.82)}
+body.full .hud.ok{background:rgba(23,58,44,.88)}
+body.full .hud.warn{background:rgba(61,49,25,.88)}
+body.full .fs-status{display:flex;gap:14px;position:fixed;top:12px;left:14px;z-index:3;background:rgba(15,26,35,.78);border-radius:6px;padding:6px 12px;font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>UTSC voice tracker</h1>
+  <select id="gameSel" aria-label="Game tab"><option value="">Pick a game</option></select>
+  <button id="loadGame">Load game</button>
+  <label><button id="pickVideo" type="button">Open video</button><input id="videoFile" type="file" accept="video/*" class="hide"></label>
+  <span class="spacer"></span>
+  <div class="status" aria-live="polite">
+    <span id="stPeriod">No period</span>
+    <span id="stPlayed">0:00 played</span>
+    <b id="stClock" class="clock-stop">Clock stopped</b>
+  </div>
+  <button id="micBtn" class="mic" aria-pressed="false"><span class="dot"></span><span id="micLbl">Mic off</span></button>
+  <button id="setBtn">Settings</button>
+</header>
+
+<section id="settings" class="settings hide" aria-label="Settings">
+  <h2>Connect to the sheet</h2>
+  <label for="cfgUrl">Sheet connection link. This is the web app URL Apps Script gives you after Deploy, not the video. The video opens from the Open video button.</label>
+  <input id="cfgUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec">
+  <label for="cfgKey">Tracker key (the TRACKER_KEY you set in Code.gs)</label>
+  <input id="cfgKey" type="password">
+  <label for="cfgOffset">Faceoff back-date, in seconds</label>
+  <input id="cfgOffset" type="number" min="0" max="10" step="0.5" value="2">
+  <div class="row"><button id="saveCfg">Save settings</button><span id="cfgMsg" class="toast"></span></div>
+</section>
+
+<div id="fsStatus" class="fs-status" aria-hidden="true"></div>
+<main>
+  <div>
+    <div class="video-box">
+      <video id="video" preload="auto"></video>
+      <div id="videoEmpty" class="video-empty"><div>Open the game video to start.</div><div style="font-size:14px">Use the same file for every pass so the timestamps line up.</div></div>
+    </div>
+    <div class="transport">
+      <button id="playBtn">Play</button>
+      <button id="back5" title="Back 5 seconds">-5s</button>
+      <button id="fwd5" title="Forward 5 seconds">+5s</button>
+      <input id="seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Video position">
+      <select id="rate" aria-label="Playback speed"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.5</option><option>2</option></select>
+      <span id="vt" class="vt">0:00 / 0:00</span>
+      <button id="fsBtn" title="Full screen (V)">Full screen</button>
+    </div>
+    <div class="ice-row" aria-label="On the ice">
+      <div id="ice" class="ice"></div>
+      <div id="iceNote" class="ice-note"></div>
+    </div>
+  </div>
+
+  <div id="side">
+    <div class="panel">
+      <h2>Hearing</h2>
+      <div id="hearing" class="hearing idle">Mic is off. Press M or the mic button.</div>
+      <div class="meter" aria-hidden="true"><div id="lvl" class="lvl"></div><div id="tick" class="tick hide"></div></div>
+      <div id="meterNote" class="meter-note"></div>
+    </div>
+    <div id="hud" class="hud" aria-live="assertive">
+      <div class="msg" style="color:var(--muted)">Counted stats show up here.</div>
+    </div>
+    <div class="panel" id="typePanel">
+      <div class="typebox">
+        <input id="typeIn" type="text" placeholder="Type a call: Erin recovery o-zone and pass" aria-label="Type a call">
+        <button id="typeGo">Enter</button>
+      </div>
+    </div>
+    <div class="panel" id="logPanel">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h2>Log</h2>
+        <div><span id="sync" class="sync"></span> <button id="undoBtn">Undo</button></div>
+      </div>
+      <ul id="log" class="log"></ul>
+    </div>
+  </div>
+</main>
+
+<div class="bottom">
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2>Shifts and time on ice</h2>
+      <button id="writeShifts">Write shifts to sheet</button>
+    </div>
+    <table><thead><tr><th>Player</th><th>Pos</th><th>Shifts</th><th>TOI</th><th>Avg shift</th></tr></thead><tbody id="toiBody"></tbody></table>
+    <div id="toiMsg" class="sync" style="margin-top:6px"></div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Teach a name</h2>
+      <div style="font-size:14px;color:var(--muted)">If the tracker keeps hearing a name wrong, save what it hears.</div>
+      <div class="row">
+        <input id="aliasHeard" type="text" placeholder="Ricky" aria-label="Heard as" style="flex:1">
+        <select id="aliasPlayer" aria-label="Player"></select>
+        <button id="aliasSave">Save name</button>
+      </div>
+      <div id="aliasMsg" class="sync" style="margin-top:6px"></div>
+    </div>
+    <div class="panel">
+      <h2>Keys</h2>
+      <div class="keys">
+        <kbd>Space</kbd><span>Play or pause</span>
+        <kbd>← →</kbd><span>Back or forward 5 seconds (hold Shift for 1)</span>
+        <kbd>M</kbd><span>Mic on or off</span>
+        <kbd>F</kbd><span>Shot attempt for</span>
+        <kbd>A</kbd><span>Shot attempt against</span>
+        <kbd>S</kbd><span>Save</span>
+        <kbd>Q</kbd><span>Quality chance against</span>
+        <kbd>W</kbd><span>Whistle</span>
+        <kbd>D</kbd><span>Puck drop (clock on, no faceoff)</span>
+        <kbd>Z</kbd><span>Undo</span>
+        <kbd>V</kbd><span>Full screen on or off (Esc also exits)</span>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script id="core">
+const S = {GOALS:'Goals',AST:'Assists',PM:'Plus/Minus',FOW:'Faceoffs Won',FOT:'Faceoffs Taken',QC:'Quality Chances',SOG:'Shots on Goal',SAF:'Shot Attempts For',SAA:'Shot Attempts Against',QCA:'Qual Chances Against',ENT:"Ctrl'd Zone Entries",EXT:"Ctrl'd Zone Exits",PASS:'Passes Completed',RR:'Royal Road Passes',LPRO:'Loose Puck Rec (O-Zone)',LPRD:'Loose Puck Rec (N+D)',SAVE:'Saves',GA:'Goals Against',SHA:'Shots Against'};
+const LABEL = {};
+LABEL[S.GOALS]='Goal';LABEL[S.AST]='Assist';LABEL[S.PM]='Plus/minus';LABEL[S.FOW]='Faceoff won';LABEL[S.FOT]='Faceoff taken';LABEL[S.QC]='Quality chance';LABEL[S.SOG]='Shot on goal';LABEL[S.SAF]='Shot attempt for';LABEL[S.SAA]='Shot attempt against';LABEL[S.QCA]='Quality chance against';LABEL[S.ENT]='Zone entry';LABEL[S.EXT]='Zone exit';LABEL[S.PASS]='Pass complete';LABEL[S.RR]='Royal road pass';LABEL[S.LPRO]='LPR O-zone';LABEL[S.LPRD]='LPR N+D';LABEL[S.SAVE]='Save';LABEL[S.GA]='Goal against';LABEL[S.SHA]='Shot against';
+const GOALIE_STATS = [S.SAVE,S.GA,S.SHA];
+const NUMW = {one:1,two:2,three:3,four:4,five:5,first:1,second:2,third:3,'1st':1,'2nd':2,'3rd':3,overtime:4,ot:4,'1':1,'2':2,'3':3,'4':4,'5':5};
+
+function norm(raw){
+  let s = ' ' + String(raw||'').toLowerCase()
+    .replace(/[’‘`]/g,"'").replace(/'s\b/g,'').replace(/'/g,'')
+    .replace(/[-_\/]/g,' ').replace(/[.;:!?]/g,',')
+    .replace(/[^a-z0-9, ]/g,' ') + ' ';
+  s = s.replace(/\s*,\s*/g,' , ').replace(/\s+/g,' ');
+  const rep = [
+    [/ (o|oh|offensive|ozone) zone /g,' ozone '], [/ ozone /g,' ozone '],
+    [/ (d|dee|defensive|defence|defense) zone /g,' dzone '], [/ (n|en|neutral) zone /g,' nzone '],
+    [/ shot on goal /g,' shot onnet '], [/ shots on goal /g,' shot onnet '], [/ on goal /g,' onnet '], [/ on net /g,' onnet '],
+    [/ face off /g,' faceoff '], [/ face of /g,' faceoff '],
+    [/ (first|1st) line /g,' line 1 '], [/ (second|2nd) line /g,' line 2 '], [/ (third|3rd) line /g,' line 3 '], [/ (fourth|4th) line /g,' line 4 '],
+    [/ (first|1st) (d )?pair(ing)? /g,' pair 1 '], [/ (second|2nd) (d )?pair(ing)? /g,' pair 2 '], [/ (third|3rd) (d )?pair(ing)? /g,' pair 3 '],
+    [/ (d )?pairing /g,' pair '], [/ d pair /g,' pair '],
+    [/ (line|pair) (one|won) /g,' $1 1 '], [/ (line|pair) (two|to|too) /g,' $1 2 '], [/ (line|pair) (three|tree) /g,' $1 3 '], [/ (line|pair) four /g,' $1 4 '],
+    [/ power play /g,' pp '], [/ power play goal /g,' pp goal ']
+  ];
+  for (let i=0;i<2;i++) rep.forEach(r=>{ s = s.replace(r[0], r[1]); });
+  return s.replace(/\s+/g,' ').trim();
+}
+
+function has(s, alts){ return new RegExp('(?:^| )(?:'+alts+')(?= |$)').test(s); }
+function del(s, alts){ return (' '+s+' ').replace(new RegExp('(?<= )(?:'+alts+')(?= )','g'),' ').replace(/\s+/g,' ').trim(); }
+
+const LETTER = {a:['a','ay','eh'],b:['b','bee','be'],c:['c','see','sea','cee','si'],d:['d','dee'],e:['e'],f:['f','ef','eff'],g:['g','gee'],h:['h','aitch'],j:['j','jay'],k:['k','kay'],l:['l','el','elle'],m:['m','em'],n:['n','en'],o:['o','oh'],p:['p','pee'],r:['r','are'],s:['s','es','ess'],t:['t','tee','tea'],w:['w']};
+function keyOf(name){ return norm(String(name).replace(/[()]/g,' ')).replace(/,/g,' ').replace(/\s+/g,' ').trim(); }
+
+function buildIndex(players, aliases){
+  const list = [];
+  const add = (phrase, name) => { const k = keyOf(phrase); if (k) list.push({t:k.split(' '), name}); };
+  const firstCount = {};
+  players.forEach(p => { const f = keyOf(p.name).split(' ')[0]; firstCount[f] = (firstCount[f]||0)+1; });
+  players.forEach(p => {
+    const parts = keyOf(p.name).split(' ');
+    add(p.name, p.name);
+    if (parts.length===2 && parts[1].length===1 && LETTER[parts[1]]) LETTER[parts[1]].forEach(v => add(parts[0]+' '+v, p.name));
+    if (parts.length>1 && firstCount[parts[0]]===1) add(parts[0], p.name);
+    if (p.num) add('number '+p.num, p.name);
+  });
+  (aliases||[]).forEach(a => { if (players.some(p => p.name===a.player)) add(a.heard, a.player); });
+  list.sort((a,b) => b.t.length - a.t.length);
+  return list;
+}
+
+function findNames(tokens, index){
+  const out = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let hit = null;
+    for (const e of index) {
+      if (e.t.length > tokens.length - i) continue;
+      let ok = true;
+      for (let k=0;k<e.t.length;k++) if (tokens[i+k] !== e.t[k]) { ok=false; break; }
+      if (ok) { hit = e; break; }
+    }
+    if (hit) { out.push({name:hit.name, i, j:i+hit.t.length}); i += hit.t.length; }
+    else i++;
+  }
+  return out;
+}
+
+const FILLER = 'the|a|an|to|by|with|nice|good|great|puck|and|then|also|off|of|from|it|in|on|that|one|play|for|her|his|she|clean|big|quick|another|again|um|uh|okay|ok|so|yeah|zone';
+
+function takeIndividual(c){
+  const ids = []; let s = c;
+  const take = (alts, id) => { if (has(s, alts)) { s = del(s, alts); if (id) ids.push(id); return true; } return false; };
+  take('royal road passes|royal road pass|royal road|royal roads|royal','RR');
+  if (has(s,'recover|recovers|recovery|recovered|recoveries|rec|lpr|loose puck|loose')) {
+    let id = 'LPR?';
+    if (has(s,'ozone|o|oh|offensive|oz|offence|offense')) id = 'LPRO';
+    else if (has(s,'dzone|nzone|d|n|nd|dee|defensive|neutral|dz|nz|defence|defense')) id = 'LPRD';
+    s = del(s,'loose puck|loose|puck|recover|recovers|recovery|recovered|recoveries|rec|lpr|ozone|o|oh|offensive|oz|offence|offense|dzone|nzone|d|n|nd|dee|defensive|neutral|dz|nz|defence|defense');
+    ids.push(id);
+  }
+  if (take('faceoff win|faceoff won|draw win|won the draw|won draw|wins the draw|wins draw|win|won|wins','FOW')) s = del(s,'faceoff|draw');
+  else if (take('faceoff loss|faceoff lost|draw loss|lost the draw|lost draw|loses the draw|loss|lost|lose|loses','FOL')) s = del(s,'faceoff|draw');
+  take('quality scoring chance|quality chance|scoring chance|quality|qsc|qc|chance','QC');
+  take('controlled entry|controlled entries|zone entry|entry|entries|entered|carry in|carried in|carries in','ENT');
+  take('controlled exit|controlled exits|zone exit|exit|exits|exited|breakout','EXT');
+  if (take('wide|missed|miss|misses|post|crossbar|bar|blocked|block|attempt|shot attempt|off target','ATT')) s = del(s,'shot|shots|shoots|onnet');
+  take('shot onnet|onnet|shot|shots|shoots|sog','SOG');
+  take('complete pass|completed pass|pass complete|pass completed|passes|pass|passed|completion|completes','PASS');
+  return {ids, rest: del(s, FILLER)};
+}
+
+function takeTeam(c){
+  const ids = []; let s = c;
+  const take = (alts, id) => { if (has(s, alts)) { s = del(s, alts); ids.push(id); return true; } return false; };
+  take('quality chance against|quality scoring chance against|scoring chance against|quality against|chance against|qca','QCA');
+  take('save|saved|saves|nice save|big save','SAVE');
+  take('shot attempt against|shot against|shots against|attempt against|attempts against|against','SAA');
+  take('shot attempt for|shot for|shots for|attempt for|attempts for|for','SAF');
+  if (ids.includes('SAVE')) { const k = ids.indexOf('SAA'); if (k>=0) ids.splice(k,1); }
+  return {ids, rest: del(s, FILLER)};
+}
+
+function presetHits(s, lines, roster){
+  const hits = []; let rest = s;
+  (lines||[]).forEach(l => {
+    const phrases = [l.name].concat(l.say||[]).map(keyOf).filter(Boolean).sort((a,b)=>b.length-a.length);
+    for (const ph of phrases) {
+      if (has(rest, ph.replace(/ /g,' '))) {
+        rest = del(rest, ph);
+        hits.push({name:l.name, players:l.players.filter(n => roster.some(p => p.name===n))});
+        break;
+      }
+    }
+  });
+  return {hits, rest};
+}
+
+function parseCall(raw, ctx){
+  const s = norm(raw);
+  if (!s || s===',') return {error:'Nothing heard.'};
+  if (/^(undo|undo that|scratch that|delete that|cancel that|cancel|take that back)$/.test(s)) return {kind:'undo'};
+  let m = s.match(/^(?:go )?back (\d+|one|two|to|too|three|four|five)(?: seconds?| secs?)?$/);
+  if (m) { const n = {one:1,two:2,to:2,too:2,three:3,four:4,five:5}[m[1]] || Number(m[1]); return {kind:'back', secs:n}; }
+
+  if (has(s,'period|overtime|ot') && has(s,'start|starts|begin|begins|beginning|underway|end|ends|over|done|horn|finished')) {
+    const pm = s.match(/(?:^| )(1|2|3|4|one|two|three|four|first|second|third|1st|2nd|3rd|overtime|ot)(?= |$)/);
+    const period = pm ? NUMW[pm[1]] : null;
+    if (!period) return {error:'Which period? Say "period 2 start".'};
+    const end = has(s,'end|ends|over|done|horn|finished');
+    return {kind: end ? 'period_end' : 'period_start', period};
+  }
+
+  const tokens = s.replace(/ , /g,' ').split(' ');
+  const names = findNames(tokens, ctx.index);
+
+  if (/^(whistle|stoppage|stop|icing|offside|offsides|whistle icing|whistle offside|whistle offsides|whistle stoppage|penalty|whistle penalty|frozen|puck frozen|goalie freeze|freeze)$/.test(s)) return {kind:'whistle'};
+  if (/^(drop|puck drop|puck dropped|dropped|drop the puck|play on|clock on|clock running|go)$/.test(s)) return {kind:'drop'};
+
+  if (has(s,'goal against|goals against|they scored|they score|goal for them|opponent goal|opposition goal|against goal|goal them')) {
+    return {kind:'goal_against', pp: has(s,'pp|ppg|man advantage')};
+  }
+  if (has(s,'goal|goals|scores|scored|ppg') && names.length) {
+    const ai = tokens.findIndex(t => /^(assist|assists|assisted|assisting|helpers|helper|from|apples)$/.test(t));
+    let scorer, assists;
+    if (ai >= 0) {
+      const before = names.filter(n => n.i < ai), after = names.filter(n => n.i > ai);
+      scorer = (before[0] || after.shift() || {}).name;
+      assists = after.map(n => n.name);
+    } else { scorer = names[0].name; assists = names.slice(1).map(n => n.name); }
+    assists = assists.filter((n,k,a) => n!==scorer && a.indexOf(n)===k).slice(0,2);
+    return {kind:'goal_for', scorer, assists, pp: has(s,'pp|ppg|man advantage')};
+  }
+
+  const changePrefix = /^(line change|change|changes|new line|lineup|line up|starting lineup|starting five|starters|starting|start|on ice|on the ice)\b/.test(s);
+  const pre = presetHits(s, ctx.lines, ctx.roster);
+  const looksStat = s.split(/ , | and | then | also /).some(c => takeIndividual(c).ids.length || (!findNames(c.split(' '),ctx.index).length && takeTeam(c).ids.length));
+
+  if (changePrefix || (pre.hits.length && !looksStat)) {
+    const members = [];
+    pre.hits.forEach(h => h.players.forEach(n => { if (!members.includes(n)) members.push(n); }));
+    findNames(pre.rest.replace(/ , /g,' ').split(' '), ctx.index).forEach(n => { if (!members.includes(n.name)) members.push(n.name); });
+    if (!members.length) return {error:'Heard a change but no players. Say "change" and the names.'};
+    return {kind:'change', members, lines: pre.hits.map(h => h.name)};
+  }
+
+  if (!looksStat && names.length && /(^| )(on|off|for|in|out)( |$)/.test(s)) {
+    const on = [], off = [];
+    const tk = tokens;
+    const isKw = t => /^(on|off|for|in|out)$/.test(t);
+    const nameAt = {}; names.forEach(n => { nameAt[n.i] = n; });
+    if (tk.includes('for')) {
+      names.forEach((n,k) => { const nx = names[k+1]; if (nx && tk.slice(n.j, nx.i).includes('for')) { on.push(n.name); off.push(nx.name); } });
+    } else {
+      const prefixMode = isKw(tk[0]);
+      let pending = [], kw = null;
+      for (let i=0;i<tk.length;i++) {
+        if (nameAt[i]) {
+          if (prefixMode && kw) (kw==='on'||kw==='in' ? on : off).push(nameAt[i].name);
+          else pending.push(nameAt[i].name);
+          i = nameAt[i].j - 1;
+        } else if (isKw(tk[i])) {
+          kw = tk[i];
+          if (!prefixMode) { (kw==='on'||kw==='in' ? on : off).push(...pending); pending = []; }
+        }
+      }
+    }
+    if (on.length || off.length) return {kind:'change_diff', on, off};
+  }
+
+  const clauses = s.split(/ , | and | then | also /).map(c => c.trim()).filter(Boolean);
+  const items = [], warnings = [];
+  let lastPlayer = null;
+  clauses.forEach(c => {
+    const tk = c.split(' ');
+    const nm = findNames(tk, ctx.index);
+    if (!nm.length) {
+      const team = takeTeam(c);
+      team.ids.forEach(id => items.push({id, team:true}));
+      const ind = takeIndividual(team.rest);
+      if (ind.ids.length) {
+        if (lastPlayer) ind.ids.forEach(id => items.push({id, p:lastPlayer}));
+        else warnings.push('Who? Heard "' + c + '" with no name.');
+      } else if (!team.ids.length && c) warnings.push('Didn\'t catch "' + c + '".');
+      return;
+    }
+    nm.forEach((n,k) => {
+      const start = k===0 ? 0 : n.i;
+      const end = nm[k+1] ? nm[k+1].i : tk.length;
+      const seg = tk.slice(start, end).filter((t,idx) => { const at = start+idx; return !(at>=n.i && at<n.j); }).join(' ');
+      const ind = takeIndividual(seg);
+      if (ind.ids.length) { ind.ids.forEach(id => items.push({id, p:n.name})); lastPlayer = n.name; }
+      else { lastPlayer = n.name; warnings.push('Heard ' + n.name + ' but no stat.'); }
+    });
+  });
+  if (!items.length) return {error: warnings[0] || 'Didn\'t catch a stat or a name.'};
+  return {kind:'stat', items, warnings};
+}
+
+function buildIncs(parsed, ice, goalie){
+  const incs = [], warnings = (parsed.warnings||[]).slice();
+  let restart = false, needIce = false;
+  const one = (s,p) => incs.push({s,p,d:1});
+  const all = (s,d) => { needIce = true; ice.forEach(p => incs.push({s,p,d:d||1})); };
+  const g = s => incs.push({s,p:goalie||'',d:1});
+  if (parsed.kind==='goal_for') {
+    one(S.GOALS, parsed.scorer); one(S.SOG, parsed.scorer); all(S.SAF);
+    parsed.assists.forEach(a => one(S.AST, a));
+    if (!parsed.pp) all(S.PM, 1);
+    if (!ice.includes(parsed.scorer)) warnings.push(parsed.scorer + ' isn\'t on the ice in the tracker.');
+  } else if (parsed.kind==='goal_against') {
+    all(S.SAA); g(S.GA); g(S.SHA);
+    if (!parsed.pp) all(S.PM, -1);
+  } else if (parsed.kind==='stat') {
+    let saf = false;
+    parsed.items.forEach(it => {
+      switch (it.id) {
+        case 'FOW': one(S.FOW,it.p); one(S.FOT,it.p); restart = true; break;
+        case 'FOL': one(S.FOT,it.p); restart = true; break;
+        case 'QC': one(S.QC,it.p); break;
+        case 'ENT': one(S.ENT,it.p); break;
+        case 'EXT': one(S.EXT,it.p); break;
+        case 'PASS': one(S.PASS,it.p); break;
+        case 'RR': one(S.RR,it.p); one(S.PASS,it.p); break;
+        case 'LPRO': one(S.LPRO,it.p); break;
+        case 'LPRD': one(S.LPRD,it.p); break;
+        case 'LPR?': warnings.push('Recovery for ' + it.p + ' not counted. Say o-zone or D zone.'); break;
+        case 'SOG': one(S.SOG,it.p); if (!saf) { all(S.SAF); saf = true; } break;
+        case 'ATT': if (!saf) { all(S.SAF); saf = true; } break;
+        case 'SAF': all(S.SAF); break;
+        case 'SAA': all(S.SAA); break;
+        case 'QCA': all(S.QCA); break;
+        case 'SAVE': all(S.SAA); g(S.SAVE); g(S.SHA); break;
+      }
+      if (it.p && !ice.includes(it.p) && !/^FO/.test(it.id) && ice.length) warnings.push(it.p + ' isn\'t on the ice in the tracker.');
+    });
+  }
+  if (needIce && !ice.length) warnings.push('No one is on the ice in the tracker, so on-ice stats weren\'t credited. Call a change first.');
+  return {incs, restart, warnings: warnings.filter((w,k,a) => a.indexOf(w)===k)};
+}
+
+function describe(incs, ice){
+  const byP = {}, team = {};
+  incs.forEach(x => {
+    if (GOALIE_STATS.includes(x.s)) { const k = 'G:' + (x.p||'Goalie'); (byP[k] = byP[k] || []).push(x); return; }
+    const onIceStat = [S.SAF,S.SAA,S.QCA].includes(x.s) || (x.s===S.PM);
+    if (onIceStat) { const k = x.s + '|' + x.d; (team[k] = team[k] || []).push(x.p); return; }
+    (byP[x.p] = byP[x.p] || []).push(x);
+  });
+  const sign = d => (d>0?'+':'') + d;
+  const people = Object.keys(byP).map(k => ({who: k.startsWith('G:') ? k.slice(2) : k, goalie: k.startsWith('G:'), adds: byP[k].map(x => sign(x.d) + ' ' + LABEL[x.s])}));
+  const teamLines = Object.keys(team).map(k => { const [s,d] = k.split('|'); return sign(Number(d)) + ' ' + LABEL[s] + ' for ' + team[k].join(', '); });
+  return {people, teamLines};
+}
+
+function summaryText(incs){
+  const d = describe(incs);
+  return d.people.map(p => p.who + ': ' + p.adds.join(', ')).concat(d.teamLines).join('; ');
+}
+
+function isTimeline(e){ return ['period_start','period_end','whistle','drop','change'].includes(e.kind) || !!e.restart; }
+
+function replay(entries, roster, upTo){
+  const posOf = n => ((roster.find(p => p.name===n) || {}).pos || '');
+  const grp = n => { const p = posOf(n); return p==='D' ? 'D' : (p ? 'F' : '?'); };
+  let ice = [], running = false, period = 0, last = null, played = 0, periodPlayed = 0;
+  const toi = {}, shifts = {}, onSince = {};
+  const tl = entries.filter(isTimeline).filter(e => e.t <= upTo).sort((a,b) => a.t-b.t || a.seq-b.seq);
+  const advance = t => {
+    if (last !== null && running && t > last) { const d = t-last; ice.forEach(n => { toi[n] = (toi[n]||0)+d; }); played += d; periodPlayed += d; }
+    if (last === null || t > last) last = t;
+  };
+  const setIce = (next, t) => {
+    next.forEach(n => { if (!ice.includes(n)) { shifts[n] = (shifts[n]||0)+1; onSince[n] = t; } });
+    ice.forEach(n => { if (!next.includes(n)) delete onSince[n]; });
+    ice = next;
+  };
+  tl.forEach(e => {
+    advance(e.t);
+    if (e.kind==='period_start') { period = e.period; running = false; periodPlayed = 0; setIce([], e.t); }
+    else if (e.kind==='period_end') { running = false; setIce([], e.t); }
+    else if (e.kind==='whistle') running = false;
+    else if (e.kind==='drop') running = true;
+    else if (e.kind==='change') {
+      let next = ice.slice();
+      if (e.members && e.members.length) {
+        const groups = new Set(e.members.map(grp));
+        next = groups.has('?') ? [] : next.filter(n => !groups.has(grp(n)));
+        e.members.forEach(n => { if (!next.includes(n)) next.push(n); });
+      }
+      (e.off||[]).forEach(n => { next = next.filter(x => x!==n); });
+      (e.on||[]).forEach(n => { if (!next.includes(n)) next.push(n); });
+      setIce(next, e.t);
+    } else if (e.restart) running = true;
+  });
+  if (isFinite(upTo)) advance(upTo);
+  return {ice, running, period, toi, shifts, onSince, played, periodPlayed};
+}
+
+function fmt(sec){
+  sec = Math.max(0, Math.round(sec||0));
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  return (h ? h + ':' + String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0');
+}
+if (typeof module !== 'undefined') module.exports = {norm, buildIndex, findNames, parseCall, buildIncs, describe, summaryText, replay, fmt, S};
+</script>
+
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video');
+const st = { game:'', roster:[], goalie:'', aliases:[], lines:[], index:[], entries:[], seq:1, queue:[], busy:false, failed:false };
+let cfg = { url:'', key:'', offset:2 };
+try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem('utscTrackerCfg') || '{}')); } catch (e) {}
+
+function saveCfg(){ try { localStorage.setItem('utscTrackerCfg', JSON.stringify(cfg)); } catch (e) {} }
+
+async function api(action, payload){
+  if (!cfg.url) throw new Error('Add the web app URL in Settings.');
+  const r = await fetch(cfg.url, {method:'POST', body: JSON.stringify(Object.assign({key:cfg.key, action}, payload||{}))});
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error);
+  return j.data;
+}
+
+function ctx(){ return {index: st.index, lines: st.lines, roster: st.roster}; }
+function now(){ return video.currentTime || 0; }
+function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function active(){ return st.entries.filter(e => !e.removed); }
+function stateAt(t){ return replay(active(), st.roster, t); }
+
+/* ---------- sheet sync ---------- */
+function enqueue(job){ st.queue.push(job); pump(); }
+async function pump(){
+  if (st.busy || !st.queue.length) return;
+  st.busy = true; renderSync();
+  const job = st.queue[0];
+  try {
+    const res = await api('commit', {game: st.game, remove: job.remove||[], add: job.add||[]});
+    st.queue.shift(); st.failed = false;
+    (job.add||[]).forEach(e => { e.sync = 'saved'; });
+    if (res.skipped && res.skipped.length) flashWarn('Not written: ' + res.skipped.join(', '));
+  } catch (err) {
+    st.failed = true;
+    (job.add||[]).forEach(e => { e.sync = 'error'; });
+    renderSync(err.message); st.busy = false; renderLog(); return;
+  }
+  st.busy = false; renderLog(); renderSync(); pump();
+}
+function renderSync(msg){
+  const el = $('sync');
+  if (st.failed) { el.innerHTML = ''; el.textContent = (msg ? msg + ' ' : 'Sync failed. '); const b = document.createElement('button'); b.textContent = 'Retry'; b.onclick = () => { st.failed = false; pump(); }; el.appendChild(b); return; }
+  el.textContent = st.queue.length ? 'Saving ' + st.queue.length + '…' : (st.game ? 'Saved' : '');
+}
+
+/* ---------- making entries ---------- */
+function handleCall(text, t){
+  if (!st.game) { flashWarn('Load a game first.'); return; }
+  if (!video.src) { flashWarn('Open the game video first.'); return; }
+  const p = parseCall(text, ctx());
+  if (p.error) { flashWarn(p.error, text); return; }
+  if (p.kind==='undo') { undoLast(); return; }
+  if (p.kind==='back') { nudgeLast(-p.secs); return; }
+
+  const e = {id:newId(), seq:st.seq++, t, kind:p.kind, heard:text, incs:[]};
+  if (p.kind==='period_start' || p.kind==='period_end') { e.period = p.period; e.summary = (p.kind==='period_start' ? 'Period ' + p.period + ' start' : 'Period ' + p.period + ' end'); }
+  else if (p.kind==='whistle') e.summary = 'Whistle, clock stopped';
+  else if (p.kind==='drop') e.summary = 'Puck drop, clock running';
+  else if (p.kind==='change' || p.kind==='change_diff') {
+    e.kind = 'change';
+    if (p.members) e.members = p.members;
+    if (p.on) { e.on = p.on; e.off = p.off; }
+    e.summary = p.members ? 'On: ' + p.members.join(', ') + (p.lines.length ? ' (' + p.lines.join(', ') + ')' : '') : [p.on.length ? 'On: ' + p.on.join(', ') : '', p.off.length ? 'Off: ' + p.off.join(', ') : ''].filter(Boolean).join('  ');
+  } else {
+    const ice = stateAt(t).ice;
+    const b = buildIncs(p, ice, st.goalie);
+    e.kind = p.kind==='stat' ? 'stat' : p.kind;
+    e.incs = b.incs; e.onIce = ice;
+    if (b.restart) { e.restart = true; e.t = Math.max(0, t - (Number(cfg.offset)||0)); }
+    e.summary = summaryText(b.incs) || 'Nothing counted';
+    e.warnings = b.warnings;
+    if (!b.incs.length && !b.restart) { flashWarn(b.warnings[0] || 'Nothing counted.', text); return; }
+  }
+  addEntry(e);
+}
+
+function addEntry(e){
+  e.sync = 'saving';
+  st.entries.push(e);
+  enqueue({add:[e]});
+  showHud(e);
+  renderAll();
+}
+
+function undoLast(){
+  const list = active().sort((a,b) => a.seq-b.seq);
+  const e = list[list.length-1];
+  if (!e) { flashWarn('Nothing to undo.'); return; }
+  removeEntry(e, true);
+}
+function removeEntry(e, announce){
+  e.removed = true;
+  enqueue({remove:[e.id]});
+  if (announce) showHudMsg('Undone: ' + (e.summary || e.kind), true);
+  renderAll();
+}
+
+function retime(e, t){
+  const ne = Object.assign({}, e, {id:newId(), seq:st.seq++, t:Math.max(0,t), sync:'saving'});
+  delete ne.removed;
+  if (e.kind==='stat' || e.kind==='goal_for' || e.kind==='goal_against') {
+    const p = parseCall(e.heard, ctx());
+    if (p && !p.error && p.kind===e.kind) {
+      const ice = replay(active().filter(x => x.id!==e.id), st.roster, ne.t).ice;
+      const b = buildIncs(p, ice, st.goalie);
+      ne.incs = b.incs; ne.onIce = ice; ne.summary = summaryText(b.incs); ne.warnings = b.warnings;
+    }
+  }
+  e.removed = true;
+  st.entries.push(ne);
+  enqueue({remove:[e.id], add:[ne]});
+  showHudMsg('Moved to ' + fmt(ne.t) + ': ' + (ne.summary||ne.kind), false);
+  renderAll();
+}
+function nudgeLast(d){
+  const list = active().sort((a,b) => a.seq-b.seq);
+  const e = list[list.length-1];
+  if (!e) return;
+  retime(e, e.t + d);
+}
+
+/* ---------- display ---------- */
+function showHud(e){
+  const hud = $('hud');
+  hud.className = 'hud ' + ((e.warnings && e.warnings.length) ? 'warn' : 'ok');
+  hud.innerHTML = '';
+  if (e.kind==='stat' || e.kind==='goal_for' || e.kind==='goal_against') {
+    const d = describe(e.incs);
+    d.people.forEach(p => {
+      const who = document.createElement('div'); who.className = 'who';
+      who.textContent = p.who || 'Goalie';
+      const pl = st.roster.find(r => r.name===p.who);
+      if (pl && pl.num) { const sm = document.createElement('small'); sm.textContent = '#' + pl.num; who.appendChild(sm); }
+      const adds = document.createElement('div'); adds.className = 'adds'; adds.textContent = p.adds.join('   ');
+      hud.append(who, adds);
+    });
+    d.teamLines.forEach(l => { const t = document.createElement('div'); t.className = 'team'; t.textContent = l; hud.appendChild(t); });
+    if (e.restart) { const t = document.createElement('div'); t.className = 'team'; t.textContent = 'Clock running from ' + fmt(e.t); hud.appendChild(t); }
+  } else {
+    const who = document.createElement('div'); who.className = 'who'; who.textContent = e.summary; hud.appendChild(who);
+    if (e.kind==='change') {
+      const n = stateAt(now()).ice.length;
+      const t = document.createElement('div'); t.className = 'team'; t.textContent = n + ' skaters on the ice'; hud.appendChild(t);
+      if (n !== 5) hud.className = 'hud warn';
+    }
+  }
+  (e.warnings||[]).forEach(w => { const m = document.createElement('div'); m.className = 'msg'; m.textContent = w; hud.appendChild(m); });
+}
+function showHudMsg(msg, warn){
+  const hud = $('hud'); hud.className = 'hud ' + (warn ? 'warn' : 'ok'); hud.innerHTML = '';
+  const m = document.createElement('div'); m.className = 'msg'; m.textContent = msg; hud.appendChild(m);
+}
+function flashWarn(msg, heard){
+  const hud = $('hud'); hud.className = 'hud warn'; hud.innerHTML = '';
+  const m = document.createElement('div'); m.className = 'msg'; m.textContent = msg; hud.appendChild(m);
+  if (heard) { const h = document.createElement('div'); h.className = 'team'; h.textContent = 'Heard: "' + heard + '". Nothing counted.'; hud.appendChild(h); }
+}
+
+function renderLog(){
+  const ul = $('log'); ul.innerHTML = '';
+  active().sort((a,b) => b.seq-a.seq).slice(0,120).forEach(e => {
+    const li = document.createElement('li');
+    const tm = document.createElement('button'); tm.className = 'tm'; tm.textContent = fmt(e.t); tm.title = 'Jump to this moment';
+    tm.onclick = () => { video.currentTime = Math.max(0, e.t - 3); };
+    const mid = document.createElement('div');
+    const w = document.createElement('div'); w.textContent = e.summary || e.kind;
+    const h = document.createElement('div'); h.className = 'heard';
+    h.textContent = (e.heard ? '"' + e.heard + '"' : '') + (e.sync==='saving' ? '  saving…' : e.sync==='error' ? '  not saved' : '');
+    if (e.sync==='error') h.classList.add('err');
+    mid.append(w, h);
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const b1 = document.createElement('button'); b1.textContent = '-1s'; b1.title = 'One second earlier'; b1.onclick = () => retime(e, e.t-1);
+    const b2 = document.createElement('button'); b2.textContent = 'Now'; b2.title = 'Move to the current video time'; b2.onclick = () => retime(e, now());
+    const b3 = document.createElement('button'); b3.textContent = 'Delete'; b3.onclick = () => removeEntry(e, true);
+    acts.append(b1, b2, b3);
+    li.append(tm, mid, acts);
+    ul.appendChild(li);
+  });
+}
+
+function renderIce(){
+  const s = stateAt(now());
+  const box = $('ice'); box.innerHTML = '';
+  s.ice.forEach(n => {
+    const p = st.roster.find(r => r.name===n) || {};
+    const c = document.createElement('div'); c.className = 'chip' + (p.pos==='D' ? ' d' : '');
+    const nn = document.createElement('div'); nn.className = 'n'; nn.textContent = n;
+    const m = document.createElement('div'); m.className = 'm';
+    m.textContent = [p.num ? '#' + p.num : '', p.pos || '', 'on ' + fmt(now() - (s.onSince[n]||now()))].filter(Boolean).join('  ');
+    c.append(nn, m); box.appendChild(c);
+  });
+  $('iceNote').textContent = s.ice.length ? (s.ice.length !== 5 ? s.ice.length + ' skaters on' : '') : 'No one on the ice yet. Call "period 1 start", then the starting five.';
+  $('stPeriod').textContent = s.period ? 'Period ' + s.period : 'No period';
+  $('stPlayed').textContent = fmt(s.periodPlayed) + ' played';
+  const c = $('stClock'); c.textContent = s.running ? 'Clock running' : 'Clock stopped'; c.className = s.running ? 'clock-run' : 'clock-stop';
+  const fs = $('fsStatus'); fs.innerHTML = '';
+  [$('stPeriod').textContent, $('stPlayed').textContent].forEach(x => { const sp = document.createElement('span'); sp.textContent = x; fs.appendChild(sp); });
+  const cb = document.createElement('b'); cb.textContent = c.textContent; cb.className = c.className; fs.appendChild(cb);
+}
+
+function renderToi(){
+  const s = replay(active(), st.roster, Infinity);
+  const body = $('toiBody'); body.innerHTML = '';
+  st.roster.forEach(p => {
+    const tr = document.createElement('tr');
+    const sh = s.shifts[p.name] || 0, toi = s.toi[p.name] || 0;
+    [p.name, p.pos || '', sh || '', toi ? fmt(toi) : '', sh ? fmt(toi/sh) : ''].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    body.appendChild(tr);
+  });
+  $('toiMsg').textContent = 'Game clock tracked: ' + fmt(s.played);
+}
+
+function renderAll(){ renderLog(); renderIce(); renderToi(); renderSync(); }
+
+/* ---------- mic level ---------- */
+let meter = null, uttActive = false, uttPeak = 0;
+async function startMeter(){
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ac.createAnalyser(); an.fftSize = 1024;
+    ac.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    meter = {stream, ac, an, buf, smooth:0, raf:0};
+    const loop = () => {
+      if (!meter) return;
+      an.getFloatTimeDomainData(buf);
+      let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i]*buf[i];
+      const db = 20 * Math.log10(Math.sqrt(sum/buf.length) + 1e-9);
+      const pct = Math.max(0, Math.min(100, (db + 70) / 60 * 100));
+      meter.smooth = Math.max(pct, meter.smooth * 0.85);
+      const el = $('lvl'); el.style.width = meter.smooth + '%'; el.classList.toggle('talk', uttActive);
+      if (uttActive) uttPeak = Math.max(uttPeak, pct);
+      meter.raf = requestAnimationFrame(loop);
+    };
+    loop();
+    $('meterNote').textContent = 'Bar turns green while a call is being heard.';
+  } catch (e) { $('meterNote').textContent = 'Level meter unavailable: ' + e.message; }
+}
+function stopMeter(){
+  if (!meter) return;
+  cancelAnimationFrame(meter.raf); meter.stream.getTracks().forEach(t => t.stop()); meter.ac.close();
+  meter = null; $('lvl').style.width = '0';
+}
+function markHeard(){
+  if (!uttPeak) return;
+  const t = $('tick'); t.classList.remove('hide'); t.style.left = 'calc(' + uttPeak.toFixed(0) + '% - 2px)';
+  $('meterNote').textContent = 'Blue mark: how loud your last heard call was.';
+  uttPeak = 0;
+}
+
+/* ---------- speech ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, micOn = false, starts = {};
+function setMic(on){
+  if (!SR) { flashWarn('This browser has no speech recognition. Use Chrome.'); return; }
+  micOn = on;
+  $('micBtn').classList.toggle('live', on); $('micBtn').setAttribute('aria-pressed', String(on));
+  $('micLbl').textContent = on ? 'Listening' : 'Mic off';
+  const h = $('hearing');
+  if (on) {
+    h.className = 'hearing idle'; h.textContent = 'Listening…';
+    rec = new SR(); rec.lang = 'en-CA'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+    starts = {};
+    rec.onresult = ev => {
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (starts[i] === undefined) { starts[i] = now(); uttActive = true; uttPeak = 0; }
+        const r = ev.results[i], txt = r[0].transcript.trim();
+        h.className = 'hearing'; h.textContent = txt;
+        if (r.isFinal) { uttActive = false; if (txt) { markHeard(); handleCall(txt, starts[i]); } }
+      }
+    };
+    rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { flashWarn('Chrome blocked the mic. Allow it in the address bar, then press M.'); setMic(false); } };
+    rec.onend = () => { if (micOn) { starts = {}; try { rec.start(); } catch (e) {} } };
+    try { rec.start(); } catch (e) {}
+    startMeter();
+  } else {
+    stopMeter(); uttActive = false;
+    if (rec) { rec.onend = null; try { rec.stop(); } catch (e) {} }
+    h.className = 'hearing idle'; h.textContent = 'Mic is off. Press M or the mic button.';
+  }
+}
+
+/* ---------- loading ---------- */
+async function loadGames(){
+  try {
+    const games = await api('games');
+    const sel = $('gameSel'); const cur = sel.value;
+    sel.innerHTML = '<option value="">Pick a game</option>';
+    games.forEach(g => { const o = document.createElement('option'); o.value = o.textContent = g; sel.appendChild(o); });
+    if (cur) sel.value = cur;
+  } catch (err) { flashWarn(err.message); }
+}
+async function loadGame(){
+  const g = $('gameSel').value;
+  if (!g) { flashWarn('Pick a game tab first.'); return; }
+  showHudMsg('Loading ' + g + '…', false);
+  try {
+    const d = await api('init', {game:g});
+    st.game = g; st.roster = d.players; st.goalie = d.goalie; st.aliases = d.aliases; st.lines = d.lines;
+    st.index = buildIndex(st.roster, st.aliases);
+    st.entries = d.entries.map(e => Object.assign(e, {sync:'saved'}));
+    st.seq = st.entries.reduce((m,e) => Math.max(m, e.seq||0), 0) + 1;
+    const ap = $('aliasPlayer'); ap.innerHTML = '';
+    st.roster.forEach(p => { const o = document.createElement('option'); o.value = o.textContent = p.name; ap.appendChild(o); });
+    const missingPos = st.roster.filter(p => p.pos !== 'D' && p.pos !== 'F').length;
+    showHudMsg(d.title + ' loaded: ' + st.roster.length + ' players, goalie ' + (st.goalie || 'not set') + ', ' + st.lines.length + ' line presets, ' + st.entries.length + ' logged entries.' + (missingPos ? ' ' + missingPos + ' players have no F or D in row 1, so line changes will replace the whole unit.' : ''), !st.roster.length || missingPos > 0);
+    if (!st.roster.length) flashWarn('No players on ' + g + '. Add names to row 2 of the tab, then load again.');
+    renderAll();
+  } catch (err) { flashWarn(err.message); }
+}
+
+/* ---------- wiring ---------- */
+$('setBtn').onclick = () => { $('settings').classList.toggle('hide'); $('cfgUrl').value = cfg.url; $('cfgKey').value = cfg.key; $('cfgOffset').value = cfg.offset; };
+$('saveCfg').onclick = () => {
+  cfg.url = $('cfgUrl').value.trim(); cfg.key = $('cfgKey').value; cfg.offset = Number($('cfgOffset').value) || 0;
+  saveCfg(); $('cfgMsg').textContent = 'Saved. Loading games…';
+  api('games').then(() => { $('cfgMsg').textContent = ''; $('settings').classList.add('hide'); loadGames(); showHudMsg('Connected to the sheet. Pick a game and click Load game.', false); })
+    .catch(err => { $('cfgMsg').textContent = 'Not connected: ' + err.message; });
+};
+$('loadGame').onclick = loadGame;
+$('pickVideo').onclick = () => $('videoFile').click();
+$('videoFile').onchange = ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  video.src = URL.createObjectURL(f); $('videoEmpty').classList.add('hide');
+  document.title = f.name + ' - UTSC voice tracker';
+};
+video.onloadedmetadata = () => { $('seek').max = video.duration; };
+video.ontimeupdate = () => { $('seek').value = video.currentTime; $('vt').textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration); renderIce(); };
+video.onplay = () => { $('playBtn').textContent = 'Pause'; };
+video.onpause = () => { $('playBtn').textContent = 'Play'; };
+video.onerror = () => flashWarn('Chrome can\'t play this video file. MP4 works best.');
+$('seek').oninput = e => { video.currentTime = Number(e.target.value); };
+$('playBtn').onclick = () => { if (!video.src) return; video.paused ? video.play() : video.pause(); };
+$('back5').onclick = () => { video.currentTime = Math.max(0, video.currentTime - 5); };
+$('fwd5').onclick = () => { video.currentTime = video.currentTime + 5; };
+$('rate').onchange = e => { video.playbackRate = Number(e.target.value); };
+$('micBtn').onclick = () => setMic(!micOn);
+function toggleFull(){
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => document.body.classList.toggle('full'));
+}
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  document.body.classList.toggle('full', on);
+  $('fsBtn').textContent = on ? 'Exit full screen' : 'Full screen';
+});
+$('fsBtn').onclick = toggleFull;
+$('undoBtn').onclick = undoLast;
+$('typeGo').onclick = () => { const v = $('typeIn').value.trim(); if (v) { handleCall(v, now()); $('typeIn').value = ''; } };
+$('typeIn').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('typeGo').click(); } if (e.key === 'Escape') e.target.blur(); };
+$('writeShifts').onclick = async () => {
+  if (!st.game) return;
+  const s = replay(active(), st.roster, Infinity);
+  const rows = st.roster.map(p => ({name:p.name, shifts:s.shifts[p.name]||0, toi:s.toi[p.name]||0}));
+  $('toiMsg').textContent = 'Writing…';
+  try {
+    const r = await api('shifts', {game:st.game, rows, gameSeconds:s.played});
+    $('toiMsg').textContent = 'Shifts written to ' + st.game + ', TOI written to Log ' + st.game + '.' + (r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : '');
+  } catch (err) { $('toiMsg').textContent = err.message; }
+};
+$('aliasSave').onclick = async () => {
+  const heard = $('aliasHeard').value.trim(), player = $('aliasPlayer').value;
+  if (!heard || !player) { $('aliasMsg').textContent = 'Type what it hears and pick the player.'; return; }
+  try {
+    await api('addAlias', {heard, player});
+    st.aliases.push({heard, player}); st.index = buildIndex(st.roster, st.aliases);
+    $('aliasMsg').textContent = '"' + heard + '" now counts as ' + player + '.'; $('aliasHeard').value = '';
+  } catch (err) { $('aliasMsg').textContent = err.message; }
+};
+
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase(), step = e.shiftKey ? 1 : 5;
+  const quick = {f:'shot for', a:'shot against', s:'save', q:'chance against', w:'whistle', d:'drop'};
+  if (k === ' ') { e.preventDefault(); $('playBtn').click(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - step); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); video.currentTime = video.currentTime + step; }
+  else if (k === 'm') setMic(!micOn);
+  else if (k === 'z') undoLast();
+  else if (k === 'v') toggleFull();
+  else if (quick[k]) handleCall(quick[k], now());
+});
+setInterval(() => { if (!video.paused) return; renderIce(); }, 1000);
+
+if (!cfg.url) $('settings').classList.remove('hide'); else loadGames();
+renderAll();
+</script>
+</body>
+</html>
